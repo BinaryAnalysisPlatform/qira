@@ -3,12 +3,12 @@
 
 void start1() {
   int i = 100;
-  while (1) { printf("t1 %d\n", i++); sleep(1); }
+  for (int i = 0; i < 2; i++) { printf("t1 %d\n", i); sleep(1); }
 }
 
 void start2() {
   int i = 200;
-  while (1) { printf("t2 %d\n", i++); sleep(1); }
+  for (int i = 0; i < 2; i++) { printf("t2 %d\n", i); sleep(1); }
 }
 
 int main() {
