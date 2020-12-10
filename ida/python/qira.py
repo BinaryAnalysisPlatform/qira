@@ -1,4 +1,12 @@
-import idaapi
+import ida_kernwin
+import ida_segment
+import ida_idaapi
+import ida_bytes
+import ida_name
+import ida_dbg
+import ida_ida
+import ida_idd
+import ida_idp
 import threading
 import time
 
@@ -16,37 +24,37 @@ def handle_message_queue():
 
     if dat[0] == "setaddress" and dat[1] != "undefined":
       try:
-        a = idaapi.toEA(0, int(str(dat[1][2:]),16))
+        a = ida_ida.to_ea(0, int(str(dat[1][2:]),16))
         jump_to(a)
       except e:
-        idaapi.msg("[QIRA Plugin] Error processing the address\n")
+        ida_kernwin.msg("[QIRA Plugin] Error processing the address\n")
 
 def start_server():
   global wsserver
   wsserver = SimpleWebSocketServer('', 3003, QiraServer)
   if wsserver is not None:
-    idaapi.msg("[QIRA Plugin] Starting WS Server\n")
+    ida_kernwin.msg("[QIRA Plugin] Starting WS Server\n")
     wsserver.serveforever()
 
 def set_qira_address(la):
   global qira_address
   ea = 0
-  if qira_address is not None and qira_address != BADADDR:
-    ea = idaapi.toEA(0, qira_address)
-    idaapi.del_bpt(ea)
+  if qira_address is not None and qira_address != ida_idaapi.BADADDR:
+    ea = ida_ida.to_ea(0, qira_address)
+    ida_dbg.del_bpt(ea)
 
   qira_address = la
-  idaapi.add_bpt(qira_address, 0, BPT_SOFT)
-  EnableBpt(qira_address, False)
+  ida_dbg.add_bpt(qira_address, 0, ida_idd.BPT_SOFT)
+  ida_dbg.enable_bpt(qira_address, False)
 
 def jump_to(a):
   global qira_address
   if a is not None:
-    if (a != qira_address) and (a != BADADDR):
+    if (a != qira_address) and (a != ida_idaapi.BADADDR):
       set_qira_address(a)
-      idaapi.jumpto(qira_address, -1, 0)
+      ida_kernwin.jumpto(qira_address, -1, 0)
     else:
-      idaapi.jumpto(qira_address, -1, 0)
+      ida_kernwin.jumpto(qira_address, -1, 0)
 
 def ws_send(msg):
   global wsserver
@@ -60,20 +68,20 @@ def update_address(addr_type, addr):
     ws_send(cmd)
 
 def update_comment(addr, rpt):
-  cmt = idaapi.get_cmt(addr, rpt)
+  cmt = ida_bytes.get_cmt(addr, rpt)
   if cmt is not None:
     ws_send("setcmt 0x%x %s" % (addr, cmt))
 
-class MyIDAViewWrapper(idaapi.IDAViewWrapper):
+class MyIDAViewWrapper(ida_kernwin.IDAViewWrapper):
   def __init__(self, viewName):
-    idaapi.IDAViewWrapper.__init__(self, viewName)
+    ida_kernwin.IDAViewWrapper.__init__(self, viewName)
     self.old_addr = None
     self.addr = None
 
   def OnViewCurpos(self):
-    self.addr = idaapi.get_screen_ea()
+    self.addr = ida_kernwin.get_screen_ea()
     if (self.old_addr != self.addr):
-      if (idaapi.isCode(idaapi.getFlags(self.addr))):
+      if (ida_bytes.is_code(ida_bytes.get_flags(self.addr))):
         # don't update the address if it's already the qira address or None
         if (self.addr is not None) and (self.addr != qira_address):
           #idaapi.msg("[QIRA Plugin] Qira Address %x \n" % (self.addr))
@@ -85,33 +93,34 @@ class MyIDAViewWrapper(idaapi.IDAViewWrapper):
         update_address("daddr", self.addr)
     self.old_addr = self.addr
 
-class idbhook(idaapi.IDB_Hooks):
+class idbhook(ida_idp.IDB_Hooks):
   def cmt_changed(self, a, b):
     update_comment(a, b)
     return 0
 
-class idphook(idaapi.IDP_Hooks):
+class idphook(ida_idp.IDP_Hooks):
   def renamed(self, ea, new_name, local_name):
     #print ea, new_name
     ws_send("setname 0x%x %s" % (ea, new_name))
     return 0
   
-class uihook(idaapi.UI_Hooks):
+class uihook(ida_kernwin.UI_Hooks):
   def __init__(self):
-    idaapi.UI_Hooks.__init__(self)
+    ida_kernwin.UI_Hooks.__init__(self)
     self.binds = []
+
   def preprocess(self, arg):
     #print "preprocess", arg
     return 0
+
   def current_tform_changed(self, a1, a2):
-    #print "tform", idaapi.get_tform_title(a1)
-    tm = MyIDAViewWrapper(idaapi.get_tform_title(a1))
+    tm = MyIDAViewWrapper(ida_kernwin.get_widget_title(a1))
     if tm.Bind():
       self.binds.append(tm)
     return 0
 
 
-class qiraplugin_t(idaapi.plugin_t):
+class qiraplugin_t(ida_idaapi.plugin_t):
   flags = 0
   comment = "QEMU Interactive Runtime Analyser plugin"
   help = "Visit qira.me for more infos"
@@ -120,7 +129,7 @@ class qiraplugin_t(idaapi.plugin_t):
 
   def init(self):
     threading.Thread(target=start_server).start()
-    idaapi.msg("[QIRA Plugin] Ready to go!\n")
+    ida_kernwin.msg("[QIRA Plugin] Ready to go!\n")
     
     self.w1 = None
 
@@ -133,30 +142,29 @@ class qiraplugin_t(idaapi.plugin_t):
     self.uihook = uihook()
     self.uihook.hook()
 
-    return idaapi.PLUGIN_KEEP
+    return ida_idaapi.PLUGIN_KEEP
 
 
   def run(self, arg):
     global qira_address
-    idaapi.msg("[QIRA Plugin] Syncing with Qira\n")
-
+    ida_kernwin.msg("[QIRA Plugin] Syncing with Qira\n")
 
     # sync names
-    for i in range(idaapi.get_nlist_size()):
-      ws_send("setname 0x%x %s" % (idaapi.get_nlist_ea(i), idaapi.get_nlist_name(i)))
+    for i in range(ida_name.get_nlist_size()):
+      ws_send("setname 0x%x %s" % (ida_name.get_nlist_ea(i), ida_name.get_nlist_name(i)))
 
     # sync comment
-    addr = idaapi.get_segm_base(idaapi.get_first_seg())
-    while addr != idaapi.BADADDR:
+    addr = ida_segment.get_segm_base(ida_segment.get_first_seg())
+    while addr != ida_idaapi.BADADDR:
       for rpt in [True, False]:
         update_comment(addr, rpt)
-      addr = idaapi.nextaddr(addr)
+      addr = ida_bytes.nextaddr(addr)
 
   def term(self):
     global wsserver
     if wsserver is not None:
       wsserver.close()
-    idaapi.msg("[QIRA Plugin] Plugin uninstalled!\n")
+    ida_kernwin.msg("[QIRA Plugin] Plugin uninstalled!\n")
 
 
 def PLUGIN_ENTRY():
@@ -183,7 +191,6 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''
 
-import SocketServer
 import hashlib
 import base64
 import socket
@@ -809,11 +816,11 @@ class SimpleSSLWebSocketServer(SimpleWebSocketServer):
 class QiraServer(WebSocket):
   def handleMessage(self):
     msg_queue.append(self.data)
-    idaapi.execute_sync(handle_message_queue, idaapi.MFF_WRITE)
+    ida_kernwin.execute_sync(handle_message_queue, ida_kernwin.MFF_WRITE)
 
   def handleConnected(self):
-    idaapi.msg("[QIRA Plugin] Client connected\n")
+    ida_kernwin.msg("[QIRA Plugin] Client connected\n")
 
   def handleClose(self):
-    idaapi.msg("[QIRA Plugin] WebSocket closed\n")
+    ida_kernwin.msg("[QIRA Plugin] WebSocket closed\n")
 
