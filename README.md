@@ -11,7 +11,7 @@
 
 <pre>
 Ubuntu 14.04 and 16.04 supported out of the box.
-18.04 is having a problem with building QEMU
+18.04 and 20.x is having a problem with building QEMU
 See forked QEMU source at https://github.com/geohot/qemu/tree/qira to fix.
 
 Non Linux hosts may run the rest of QIRA, but cannot run the QEMU tracer.
@@ -31,6 +31,21 @@ git clone https://github.com/geohot/qira.git
 cd qira/
 ./install.sh
 </pre>
+
+### Docker
+<pre>
+cd ~/
+git clone https://github.com/geohot/qira.git
+cd qira/docker
+./build.sh
+</pre>
+
+Run: <pre>sudo docker run -p 3302:3302 -it qira bash
+qira _target_</pre>
+
+Then, connect to __localhost:3002__
+
+If you want to copy a file from your filesystem to the container launch: <pre>sudo docker cp _source_ _container_name_:_path_ </pre>
 
 ## Installation Extras
 
